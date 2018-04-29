@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 import random
@@ -99,6 +100,10 @@ def main():
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
+    
+    saver = tf.train.Saver()
+    if os.path.exists('gan_model'):
+        saver.restore(sess, 'gan_model')
 
     # First, use the oracle model to provide the positive examples, which are sampled from the oracle data distribution
     generate_samples(sess, target_lstm, BATCH_SIZE, generated_num, positive_file)
@@ -174,7 +179,7 @@ def main():
                         discriminator.dropout_keep_prob: dis_dropout_keep_prob
                     }
                     _ = sess.run(discriminator.train_op, feed)
-
+    saver.save(sess, 'gan_model')
     log.close()
 
 
