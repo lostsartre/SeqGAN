@@ -73,7 +73,9 @@ class Discriminator(object):
                 self.W = tf.Variable(
                     tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0),
                     name="W")
+                #dim(self.embedded_chars) = batch * seq * embedding
                 self.embedded_chars = tf.nn.embedding_lookup(self.W, self.input_x)
+                #dim(self.embedded_chars) = batch * seq * embedding * 1
                 self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
 
             # Create a convolution + maxpool layer for each filter size
@@ -84,11 +86,12 @@ class Discriminator(object):
                     filter_shape = [filter_size, embedding_size, 1, num_filter]
                     W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
                     b = tf.Variable(tf.constant(0.1, shape=[num_filter]), name="b")
+                    #conv2d takes 4d input = [batch * width * height * channel] and 4d kernel
                     conv = tf.nn.conv2d(
                         self.embedded_chars_expanded,
                         W,
                         strides=[1, 1, 1, 1],
-                        padding="VALID",
+                        padding="VALID", # no padding
                         name="conv")
                     # Apply nonlinearity
                     h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")

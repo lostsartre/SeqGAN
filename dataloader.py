@@ -83,3 +83,29 @@ class Dis_dataloader():
     def reset_pointer(self):
         self.pointer = 0
 
+
+    def load_train_data_lstm(self, positive_file, negative_file):
+        positive_examples = []
+        negative_examples = []
+        with open(positive_file)as fin:
+            for line in fin:
+                line = line.strip()
+                line = line.split()
+                parse_line = [int(x) for x in line]
+                positive_examples.append(parse_line)
+        with open(negative_file)as fin:
+            for line in fin:
+                line = line.strip()
+                line = line.split()
+                parse_line = [int(x) for x in line]
+                if len(parse_line) == 20:
+                    negative_examples.append(parse_line)
+        self.sentences = np.array(positive_examples + negative_examples)
+
+        # Generate labels
+        positive_labels = [[0, 1] for _ in positive_examples]
+        negative_labels = [[1, 0] for _ in negative_examples]
+        self.labels = np.concatenate([positive_labels, negative_labels], 0)
+        return self.sentences, self.labels
+
+
