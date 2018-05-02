@@ -9,6 +9,7 @@ from discriminator_LSTM import Discriminator_LSTM
 from rollout import ROLLOUT
 from target_lstm import TARGET_LSTM
 import pickle
+from keras.models import load_model
 
 #########################################################################################
 #  Generator  Hyper-parameters
@@ -104,27 +105,43 @@ def main():
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
     
+    # saver = tf.train.Saver()
+    # if os.path.exists('gan_model'):
+    #     saver.restore(sess, 'gan_model')
     saver = tf.train.Saver()
-    if os.path.exists('gan_model'):
-        saver.restore(sess, 'gan_model')
-
-    # First, use the oracle model to provide the positive examples, which are sampled from the oracle data distribution
-    generate_samples(sess, target_lstm, BATCH_SIZE, generated_num, positive_file)
-    gen_data_loader.create_batches(positive_file)
-
     log = open('save/experiment-log.txt', 'w')
-    #  pre-train generator
-    print('Start pre-training...')
-    log.write('pre-training...\n')
-    for epoch in range(PRE_EPOCH_NUM):
-        loss = pre_train_epoch(sess, generator, gen_data_loader)
-        if epoch % 5 == 0:
-            generate_samples(sess, generator, BATCH_SIZE, generated_num, eval_file)
-            likelihood_data_loader.create_batches(eval_file)
-            test_loss = target_loss(sess, target_lstm, likelihood_data_loader)
-            print('pre-train epoch ', epoch, 'test_loss ', test_loss)
-            buffer = 'epoch:\t'+ str(epoch) + '\tnll:\t' + str(test_loss) + '\n'
-            log.write(buffer)
+    print ('Reading generator checkpoints...')
+    ckpt = tf.train.get_checkpoint_state('./checkpoints/generator')
+    if ckpt and ckpt.model_checkpoint_path:
+        ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+        saver.restore(sess, os.path.join('./checkpoints/generator', ckpt_name))
+        print("[*] Success to read {}".format(ckpt_name))
+    else:
+        print("[*] Failed to find a checkpoint")
+
+        # First, use the oracle model to provide the positive examples, which are sampled from the oracle data distribution
+        generate_samples(sess, target_lstm, BATCH_SIZE, generated_num, positive_file)
+        gen_data_loader.create_batches(positive_file)
+
+        #  pre-train generator
+        print('Start pre-training...')
+        log.write('pre-training...\n')
+        for epoch in range(PRE_EPOCH_NUM):
+            loss = pre_train_epoch(sess, generator, gen_data_loader)
+            if epoch % 5 == 0:
+                generate_samples(sess, generator, BATCH_SIZE, generated_num, eval_file)
+                likelihood_data_loader.create_batches(eval_file)
+                test_loss = target_loss(sess, target_lstm, likelihood_data_loader)
+                print('pre-train epoch ', epoch, 'test_loss ', test_loss)
+                buffer = 'epoch:\t'+ str(epoch) + '\tnll:\t' + str(test_loss) + '\n'
+                log.write(buffer)
+
+        #save pre-trained generator
+        modelName = 'generator.model'
+        checkpointdir = './checkpoints/generator'
+        if not os.path.exists(checkpointdir):
+            os.makedirs(checkpointdir)
+        saver.save(sess, os.path.join(checkpointdir, modelName), global_step=PRE_EPOCH_NUM)
 
     print('Start pre-training discriminator...')
     # Train 3 epoch on the generated data and do this for 50 times
@@ -142,54 +159,72 @@ def main():
     #             }
     #             _ = sess.run(discriminator.train_op, feed)
 
-    for _ in range(50):
-		generate_samples(sess, generator, BATCH_SIZE, generated_num, negative_file)
-		X_train, Y_train = dis_data_loader.load_train_data_lstm(positive_file, negative_file)
-		model.compile(loss='binary_crossentropy', optimizer='adam', metric=['accuracy'])
-		model.fit(X_train, Y_train, epochs=3, batch_size=64)    	
 
-    # rollout = ROLLOUT(generator, 0.8)
+    print ('reading discriminator...')
 
-    # print('#########################################################################')
-    # print('Start Adversarial Training...')
-    # log.write('adversarial training...\n')
-    # for total_batch in range(TOTAL_BATCH):
-    #     # Train the generator for one step
-    #     for it in range(1):
-    #         samples = generator.generate(sess)
-    #         rewards = rollout.get_reward(sess, samples, 16, discriminator)
-    #         feed = {generator.x: samples, generator.rewards: rewards}
-    #         _ = sess.run(generator.g_updates, feed_dict=feed)
+    if os.path.exists('./checkpoints/discriminator/discriminator.h5'):
+        discriminator.model = load_model('./checkpoints/discriminator/discriminator.h5')
+        print ('read successfully')
+    else:
+        print ('[*] Failed to load discriminator, begin to train...')
+        for _ in range(50):
+            generate_samples(sess, generator, BATCH_SIZE, generated_num, negative_file)
+            X_train, Y_train = dis_data_loader.load_train_data_lstm(positive_file, negative_file)
+            discriminator.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+            discriminator.model.fit(X_train, Y_train, epochs=3, batch_size=64)
 
-    #     # Test
-    #     if total_batch % 5 == 0 or total_batch == TOTAL_BATCH - 1:
-    #         generate_samples(sess, generator, BATCH_SIZE, generated_num, eval_file)
-    #         likelihood_data_loader.create_batches(eval_file)
-    #         test_loss = target_loss(sess, target_lstm, likelihood_data_loader)
-    #         buffer = 'epoch:\t' + str(total_batch) + '\tnll:\t' + str(test_loss) + '\n'
-    #         print('total_batch: ', total_batch, 'test_loss: ', test_loss)
-    #         log.write(buffer)
+        if not os.path.exists('./checkpoints/discriminator'):
+            os.makedirs('./checkpoints/discriminator')
+        discriminator.model.save('./checkpoints/discriminator/discriminator.h5')    	
 
-    #     # Update roll-out parameters
-    #     rollout.update_params()
+    rollout = ROLLOUT(generator, 0.8)
 
-    #     # Train the discriminator
-    #     for _ in range(5):
-    #         generate_samples(sess, generator, BATCH_SIZE, generated_num, negative_file)
-    #         dis_data_loader.load_train_data(positive_file, negative_file)
+    print('#########################################################################')
+    print('Start Adversarial Training...')
+    log.write('adversarial training...\n')
+    for total_batch in range(TOTAL_BATCH):
+        # Train the generator for one step
+        for it in range(1):
+            samples = generator.generate(sess)
+            rewards = rollout.get_reward(sess, samples, 16, discriminator)
+            feed = {generator.x: samples, generator.rewards: rewards}
+            _ = sess.run(generator.g_updates, feed_dict=feed)
 
-    #         for _ in range(3):
-    #             dis_data_loader.reset_pointer()
-    #             for it in range(dis_data_loader.num_batch):
-    #                 x_batch, y_batch = dis_data_loader.next_batch()
-    #                 feed = {
-    #                     discriminator.input_x: x_batch,
-    #                     discriminator.input_y: y_batch,
-    #                     discriminator.dropout_keep_prob: dis_dropout_keep_prob
-    #                 }
-    #                 _ = sess.run(discriminator.train_op, feed)
+        # Test
+        if total_batch % 5 == 0 or total_batch == TOTAL_BATCH - 1:
+            generate_samples(sess, generator, BATCH_SIZE, generated_num, eval_file)
+            likelihood_data_loader.create_batches(eval_file)
+            test_loss = target_loss(sess, target_lstm, likelihood_data_loader)
+            buffer = 'epoch:\t' + str(total_batch) + '\tnll:\t' + str(test_loss) + '\n'
+            print('total_batch: ', total_batch, 'test_loss: ', test_loss)
+            log.write(buffer)
 
-    # log.close()
+        # Update roll-out parameters
+        rollout.update_params()
+
+        # Train the discriminator
+        # for _ in range(5):
+        #     generate_samples(sess, generator, BATCH_SIZE, generated_num, negative_file)
+        #     dis_data_loader.load_train_data(positive_file, negative_file)
+
+        #     for _ in range(3):
+        #         dis_data_loader.reset_pointer()
+        #         for it in range(dis_data_loader.num_batch):
+        #             x_batch, y_batch = dis_data_loader.next_batch()
+        #             feed = {
+        #                 discriminator.input_x: x_batch,
+        #                 discriminator.input_y: y_batch,
+        #                 discriminator.dropout_keep_prob: dis_dropout_keep_prob
+        #             }
+        #             _ = sess.run(discriminator.train_op, feed)
+
+        for _ in range(3):
+            generate_samples(sess, generator, BATCH_SIZE, generated_num, negative_file)
+            X_train, Y_train = dis_data_loader.load_train_data_lstm(positive_file, negative_file)
+            discriminator.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+            discriminator.model.fit(X_train, Y_train, epochs=3, batch_size=512)
+
+    log.close()
 
 
 if __name__ == '__main__':
