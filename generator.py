@@ -1,6 +1,9 @@
 import tensorflow as tf
 from tensorflow.python.ops import tensor_array_ops, control_flow_ops
 
+def gaussian_noise_layer(input_layer, std):
+    noise = tf.random_normal(shape=tf.shape(input_layer), mean=0.0, stddev=std, dtype=tf.float32) 
+    return input_layer + noise
 
 class Generator(object):
     def __init__(self, num_emb, batch_size, emb_dim, hidden_dim,
@@ -32,8 +35,10 @@ class Generator(object):
         self.rewards = tf.placeholder(tf.float32, shape=[self.batch_size, self.sequence_length]) # get from rollout policy and discriminator
 
         # processed for batch
-        with tf.device("/cpu:0"):
-            self.processed_x = tf.transpose(tf.nn.embedding_lookup(self.g_embeddings, self.x), perm=[1, 0, 2])  # seq_length x batch_size x emb_dim
+        # with tf.device("/cpu:0"):
+        self.processed_x = tf.transpose(tf.nn.embedding_lookup(self.g_embeddings, self.x), perm=[1, 0, 2])  # seq_length x batch_size x emb_dim
+        self.processed_x = gaussian_noise_layer(self.processed_x, 1.)
+
 
         # Initial states
         self.h0 = tf.zeros([self.batch_size, self.hidden_dim])
@@ -100,7 +105,7 @@ class Generator(object):
         pretrain_opt = self.g_optimizer(self.learning_rate)
 
         self.pretrain_grad, _ = tf.clip_by_global_norm(tf.gradients(self.pretrain_loss, self.g_params), self.grad_clip)
-        self.pretrain_updates = pretrain_opt.apply_gradients(list(zip(self.pretrain_grad, self.g_params)))
+        self.pretrain_updates = pretrain_opt.apply_gradients(zip(self.pretrain_grad, self.g_params))
 
         #######################################################################################################
         #  Unsupervised Training
@@ -115,7 +120,7 @@ class Generator(object):
         g_opt = self.g_optimizer(self.learning_rate)
 
         self.g_grad, _ = tf.clip_by_global_norm(tf.gradients(self.g_loss, self.g_params), self.grad_clip)
-        self.g_updates = g_opt.apply_gradients(list(zip(self.g_grad, self.g_params)))
+        self.g_updates = g_opt.apply_gradients(zip(self.g_grad, self.g_params))
 
     def generate(self, sess):
         outputs = sess.run(self.gen_x)
@@ -207,3 +212,5 @@ class Generator(object):
 
     def g_optimizer(self, *args, **kwargs):
         return tf.train.AdamOptimizer(*args, **kwargs)
+
+
