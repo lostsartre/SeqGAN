@@ -133,26 +133,29 @@ class Generator(object):
     def init_matrix(self, shape):
         return tf.random_normal(shape, stddev=0.1)
 
+    def init_matrix_id(self, shape):
+        return tf.eye(shape)
+
     def init_vector(self, shape):
         return tf.zeros(shape)
 
     def create_recurrent_unit(self, params):
         # Weights and Bias for input and hidden tensor
         self.Wi = tf.Variable(self.init_matrix([self.emb_dim, self.hidden_dim]))
-        self.Ui = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.bi = tf.Variable(self.init_matrix([self.hidden_dim]))
+        self.Ui = tf.Variable(self.init_matrix_id(self.hidden_dim))
+        self.bi = tf.Variable(self.init_vector([self.hidden_dim]))
 
         self.Wf = tf.Variable(self.init_matrix([self.emb_dim, self.hidden_dim]))
-        self.Uf = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.bf = tf.Variable(self.init_matrix([self.hidden_dim]))
+        self.Uf = tf.Variable(self.init_matrix_id(self.hidden_dim))
+        self.bf = tf.Variable(self.init_vector([self.hidden_dim]))
 
         self.Wog = tf.Variable(self.init_matrix([self.emb_dim, self.hidden_dim]))
-        self.Uog = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.bog = tf.Variable(self.init_matrix([self.hidden_dim]))
+        self.Uog = tf.Variable(self.init_matrix_id(self.hidden_dim))
+        self.bog = tf.Variable(self.init_vector([self.hidden_dim]))
 
         self.Wc = tf.Variable(self.init_matrix([self.emb_dim, self.hidden_dim]))
-        self.Uc = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.bc = tf.Variable(self.init_matrix([self.hidden_dim]))
+        self.Uc = tf.Variable(self.init_matrix_id(self.hidden_dim))
+        self.bc = tf.Variable(self.init_vector([self.hidden_dim]))
         params.extend([
             self.Wi, self.Ui, self.bi,
             self.Wf, self.Uf, self.bf,
@@ -211,6 +214,7 @@ class Generator(object):
         return unit
 
     def g_optimizer(self, *args, **kwargs):
-        return tf.train.AdamOptimizer(*args, **kwargs)
+        # return tf.train.AdamOptimizer(*args, **kwargs)
+        return tf.train.RMSPropOptimizer(*args, **kwargs)
 
 
