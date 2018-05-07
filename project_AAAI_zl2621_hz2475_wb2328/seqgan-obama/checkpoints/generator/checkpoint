@@ -1,0 +1,2 @@
+model_checkpoint_path: "generator.model-120"
+all_model_checkpoint_paths: "generator.model-120"
